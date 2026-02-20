@@ -56,7 +56,11 @@ docker compose exec odoo odoo -u liv_delivery --stop-after-init
 
 - No `-d`, no `--db_host` required — read from `odoo.conf`.
 - First install (if module not yet present): replace `-u` with `-i`.
-- Verified: `2026-02-20` — upgrade completed without DB flags (proof: `database: odoo@db:5432` in Odoo logs).
+
+### Proof of validation (example)
+
+- Validated on `2026-02-20`: module upgrade completed **without DB flags**.
+- Evidence to look for in Odoo logs: a DB connection line similar to `database: odoo@db:5432` (confirms TCP to the `db` service, not a Unix socket).
 
 ## Notes / safety
 

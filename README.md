@@ -33,6 +33,24 @@ Docker-based POC: Odoo 17 + Postgres + Redis + FastAPI for delivery missions and
 | `backend.yml` | push/PR on `backend-fastapi/**` | `pytest tests/test_health_status.py` (10 tests) |
 | `flutter.yml` | push/PR on `liv_driver_app/**` or `liv_client_app/**` | `flutter pub get` + `flutter analyze` (both apps) |
 
+### Backend CI note: `WS_SECRET` is required at boot
+
+FastAPI **exits on startup** if `WS_SECRET` is not set (it is required by the WebSocket tracking hardening).  
+This means the backend CI environment must set `WS_SECRET` (a dummy value is fine for unit tests).
+
+### Where to put secrets (GitHub Actions)
+
+In GitHub: **Repository → Settings → Secrets and variables → Actions**
+
+- **Repository secrets**: use **New repository secret**
+- **Environment secrets** (optional): if you use GitHub Environments
+
+Recommended secrets for this repo:
+
+- **`WS_SECRET`**: required for FastAPI boot (CI and local)
+- **`HEALTH_SECRET`**: required only if you call `/health/status` against a running backend
+- **`WS_SECRET_PREV`**: optional (only if testing WS secret rotation)
+
 ## AI subagents (Cursor)
 
 - **DocKeeper (documentation & changelog)**: `.cursor/agents/dockeeper.md`

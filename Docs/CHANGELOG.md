@@ -13,7 +13,7 @@ All notable changes to this POC should be documented in this file.
   - `odoo-addon/liv_delivery/models/backend_health.py`: abstract model `liv.backend.health` + `LivBackendHealthDisplay` (TransientModel) — cron calls `/health/status`, stores result in `ir.config_parameter`, display model exposes status/updated/message/base_url without secret.
   - `odoo-addon/liv_delivery/data/backend_health_cron.xml`: scheduled action "LIV: Check Backend Health" every 5 minutes.
   - `odoo-addon/liv_delivery/views/backend_health_views.xml`: form view + server action + menuitem **LIV → Backend Status** (secret never displayed).
-  - `backend-fastapi/app/main.py`: `GET /health/status` secured by `HEALTH_SECRET` (Bearer or `X-Health-Token`); returns `ok/redis/odoo/ts`, 401 on bad token, 503 when degraded.
+  - `backend-fastapi/app/main.py`: `GET /health/status` secured by `HEALTH_SECRET` (Bearer or `X-Health-Token`); returns `ok/redis/odoo/ts` with `ts` in ISO-8601 UTC (`...Z`), 401 on bad token, 503 when `ok=false`.
   - `backend-fastapi/tests/test_health_status.py`: 10 unit tests (200/401/503, mocked redis + odoo).
   - `odoo.conf`: `db_host/db_port/db_user/db_password/addons_path` — DB config implicit for all Odoo CLI commands.
   - `docs/runbooks/odoo-conf.md`: runbook odoo.conf + upgrade command.
@@ -25,6 +25,7 @@ All notable changes to this POC should be documented in this file.
   - `flutter analyze` 0 issues on both apps.
   - Odoo cron → `liv.backend_health_status = ok`, `liv.backend_health_updated` timestamp set.
   - LIV → Backend Status: 4 fields only, no secret visible.
+  - Backend boot: `WS_SECRET` is required (CI must set it; a dummy is fine for unit tests).
 
 ## 2026-02-20 — Odoo config and model-level stability fixes
 - Added:
