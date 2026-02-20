@@ -810,6 +810,12 @@ async def collect_payment(
     delivery = await read_delivery(uid, delivery_id)
     if not delivery:
         raise ValueError("Delivery not found")
+    current = delivery.get("state", "")
+    if current not in ("en_route", "arrived"):
+        raise ValueError(
+            f"Cannot mark as delivered from state '{current}' "
+            f"(allowed: en_route, arrived)"
+        )
     sale_order_id = delivery.get("sale_order_id")
     if isinstance(sale_order_id, list):
         sale_order_id = sale_order_id[0] if sale_order_id else None
