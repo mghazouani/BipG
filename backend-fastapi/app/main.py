@@ -66,6 +66,18 @@ _rate_limit_last: dict[tuple[int, int], float] = {}
 ACTIVE_STATES = ("assigned", "en_route", "arrived")
 DELIVERY_DRIVER_KEY_PREFIX = "delivery:driver:"
 
+# State machine: source of truth for allowed transitions.
+# Terminal states (delivered, cancelled) have no outgoing transitions.
+ALLOWED_TRANSITIONS: dict[str, set[str]] = {
+    "draft":     {"assigned", "cancelled"},
+    "assigned":  {"en_route", "cancelled"},
+    "en_route":  {"arrived", "delivered", "cancelled"},
+    "arrived":   {"delivered", "cancelled"},
+    "delivered": set(),
+    "cancelled": set(),
+}
+VALID_STATES: set[str] = set(ALLOWED_TRANSITIONS.keys())
+
 
 def _verify_ws_token(token: str, driver_id: int, delivery_id: int) -> tuple[bool, str]:
     """Verify HMAC token. Returns (True, 'current'|'prev') or (False, reason). reason in: invalid_token_format, invalid_signature, token_expired, token_in_future."""
@@ -304,10 +316,34 @@ async def get_active_mission(driver_id: int):
 
 @app.post("/deliveries/{delivery_id:int}/state")
 async def update_delivery_state(delivery_id: int, body: StateUpdate):
+    if body.state not in VALID_STATES:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "unknown_state",
+                "requested": body.state,
+                "valid_states": sorted(VALID_STATES),
+            },
+        )
     try:
         uid = await login_uid()
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Odoo unavailable: {e}")
+    delivery = await read_delivery(uid, delivery_id)
+    if delivery is None:
+        raise HTTPException(status_code=404, detail="Delivery not found")
+    current_state = delivery.get("state", "")
+    allowed = ALLOWED_TRANSITIONS.get(current_state, set())
+    if body.state not in allowed:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "invalid_transition",
+                "current": current_state,
+                "requested": body.state,
+                "allowed": sorted(allowed),
+            },
+        )
     try:
         await set_delivery_state(uid, delivery_id, body.state)
     except ValueError as e:
