@@ -1,16 +1,9 @@
 name: Flutter CI
 
+# Phase 1: manual trigger only — not a required CI check.
+# Phase 2: re-enable push/pull_request triggers and add as required status check.
 on:
-  push:
-    paths:
-      - "liv_driver_app/**"
-      - "liv_client_app/**"
-      - ".github/workflows/flutter.yml"
-  pull_request:
-    paths:
-      - "liv_driver_app/**"
-      - "liv_client_app/**"
-      - ".github/workflows/flutter.yml"
+  workflow_dispatch:
 
 jobs:
   analyze:

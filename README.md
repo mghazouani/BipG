@@ -3,8 +3,8 @@
 Docker-based POC: Odoo 17 + Postgres + Redis + FastAPI for delivery missions and live tracking.
 
 <!-- CI badges -->
-![Backend CI](https://github.com/mghazouani/BipG/actions/workflows/backend.yml/badge.svg)
-![Flutter CI](https://github.com/mghazouani/BipG/actions/workflows/flutter.yml/badge.svg)
+[![Backend CI](https://github.com/mghazouani/BipG/actions/workflows/backend.yml/badge.svg)](https://github.com/mghazouani/BipG/actions/workflows/backend.yml)
+[![Flutter CI](https://github.com/mghazouani/BipG/actions/workflows/flutter.yml/badge.svg)](https://github.com/mghazouani/BipG/actions/workflows/flutter.yml)
 
 ## Stack
 
@@ -23,10 +23,14 @@ Docker-based POC: Odoo 17 + Postgres + Redis + FastAPI for delivery missions and
 - Changelog: `docs/CHANGELOG.md`
 - Architecture: `docs/ARCHITECTURE.md`
 - ADRs: `docs/adr/`
-- Runbooks: `docs/runbooks/` (incl. `docs/runbooks/odoo-conf.md`)
+- Runbooks: `docs/runbooks/` (incl. `docs/runbooks/ci.md`, `docs/runbooks/odoo-conf.md`)
 - Flutter demos: `DEMO_FLUTTER_APPS.md`
 
 ## CI
+
+See `docs/runbooks/ci.md`.
+
+Phase 1 = backend gate only; Phase 2 = flutter/lint/coverage.
 
 | Workflow | Trigger | What it runs |
 |----------|---------|-------------|

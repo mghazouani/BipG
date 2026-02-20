@@ -7,6 +7,7 @@ All notable changes to this POC should be documented in this file.
 - Added:
   - `.github/workflows/backend.yml`: GitHub Actions CI — Python 3.11, `pip install`, `pytest tests/test_health_status.py` (10 tests, triggered on `backend-fastapi/**`).
   - `.github/workflows/flutter.yml`: GitHub Actions CI — Flutter stable, `flutter pub get` + `flutter analyze` for both `liv_driver_app` and `liv_client_app` (matrix, triggered on each app path).
+  - `docs/runbooks/ci.md`: CI + branch protection runbook (includes Phase 1/Phase 2 guidance and required secrets).
   - `liv_driver_app/lib/services/health_service.dart`: `HealthService` singleton — `GET /health`, returns `HealthResult { reachable, latencyMs, error }`, timeout 5 s.
   - `liv_client_app/lib/services/health_service.dart`: idem.
   - `_HealthBadge` widget in `DriverHomeScreen` and `OrderScreen`: tap-to-refresh badge "Backend: OK (Xms)" / "Backend: Down", loaded on `initState`.
@@ -19,7 +20,7 @@ All notable changes to this POC should be documented in this file.
   - `docs/runbooks/odoo-conf.md`: runbook odoo.conf + upgrade command.
 - Changed:
   - `docker-compose.yml`: mount `./odoo.conf:/etc/odoo/odoo.conf:ro`, removed redundant `environment: HOST/USER/PASSWORD` on odoo service; added `volumes: ./backend-fastapi:/app` on fastapi service.
-  - `README.md`: stack table, CI table, badge placeholders, Run tests section.
+  - `README.md`: stack table, CI table, link to CI runbook, Run tests section.
 - Validated (2026-02-20):
   - `pytest` 10/10 PASS in FastAPI container.
   - `flutter analyze` 0 issues on both apps.
