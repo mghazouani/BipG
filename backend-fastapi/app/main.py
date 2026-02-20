@@ -717,3 +717,5 @@ async def ws_track(ws: WebSocket):
             await ws.send_text(json.dumps({"ack": True, "delivery_id": msg.delivery_id}))
     except WebSocketDisconnect:
         return
+
+# ci smoke
