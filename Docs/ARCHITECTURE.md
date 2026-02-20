@@ -1,0 +1,47 @@
+# Architecture
+
+## Overview
+
+LIV POC is a Docker-based system combining:
+
+- **Odoo 17**: Backoffice and system of record for deliveries/missions and tracking snapshots.
+- **FastAPI**: API surface for client/driver apps and real-time tracking ingestion.
+- **Postgres**: Primary database for Odoo.
+- **Redis**: Cache + real-time tracking state / pubsub (and resilience support when Odoo is unavailable).
+- **Flutter apps**:
+  - `liv_client_app`: customer/client-facing app (order → mission lifecycle).
+  - `liv_driver_app`: driver-facing app (active mission + tracking).
+
+## Repository structure
+
+- `backend-fastapi/`: FastAPI service.
+- `odoo-addon/`: Odoo addon(s) for LIV delivery tracking.
+- `liv_client_app/`: Flutter client application.
+- `liv_driver_app/`: Flutter driver application.
+- `docs/`: project documentation (this folder).
+- `odoo.conf`: Odoo configuration (DB + addons), mounted into the Odoo container.
+
+## Core flows (high level)
+
+- **Backoffice creates/assigns missions** in Odoo (deliveries).
+- **Client app** interacts with FastAPI to place orders and initiate mission creation (POC flow).
+- **Driver app** queries FastAPI for the active mission and sends location updates.
+- **FastAPI** validates and processes tracking, writes last known state to Redis, and periodically persists snapshots/last_* to Odoo.
+
+## Integration notes
+
+- **FastAPI ↔ Odoo**: synchronous validation and writes where possible; resilience mechanisms may queue writes when Odoo is unavailable.
+- **Redis**: used for caching, throttling/back-pressure, and last-known tracking state.
+
+## Health checks (FastAPI + Odoo)
+
+- **`GET /health`**: unauthenticated liveness probe (`{"ok": true}`).
+- **`GET /health/status`**: authenticated dependency status (requires `HEALTH_SECRET` via `Authorization: Bearer …` or `X-Health-Token`).
+  - Returns `ok/redis/odoo/ts` and uses HTTP 503 when `ok=false`.
+- Odoo periodically calls `/health/status` (scheduled action) and exposes results in **LIV → Backend Status**.
+
+## Security & configuration (documentation-level)
+
+- Do not commit secrets. Keep environment values (e.g., WebSocket secrets) in `.env` or environment variables only.
+- When documenting changes, avoid including tokens, secrets, or production values.
+

@@ -1,0 +1,4 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_liv_delivery,access_liv_delivery,liv_delivery.model_liv_delivery,,1,1,1,1
+access_liv_delivery_track,access_liv_delivery_track,liv_delivery.model_liv_delivery_track,,1,1,1,1
+access_liv_backend_health_display,access_liv_backend_health_display,liv_delivery.model_liv_backend_health_display,base.group_system,1,1,1,1

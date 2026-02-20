@@ -1,0 +1,40 @@
+name: Backend CI
+
+on:
+  push:
+    paths:
+      - "backend-fastapi/**"
+      - ".github/workflows/backend.yml"
+  pull_request:
+    paths:
+      - "backend-fastapi/**"
+      - ".github/workflows/backend.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend-fastapi
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: backend-fastapi/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        env:
+          # Use repo secret if set, otherwise fall back to a throwaway CI value.
+          # Tests mock redis/odoo; only WS_SECRET (required at import) and
+          # HEALTH_SECRET (used in token comparison) need a non-empty value.
+          WS_SECRET: ${{ secrets.WS_SECRET || 'ci-dummy-ws-secret' }}
+          HEALTH_SECRET: ${{ secrets.HEALTH_SECRET || 'ci-dummy-health-secret' }}
+        run: python -m pytest -v tests/test_health_status.py
