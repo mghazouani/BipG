@@ -2,6 +2,15 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../config.dart';
 
+/// Thrown when the server rejects a state transition with HTTP 422
+/// and an "invalid_transition" error code.
+class InvalidTransitionException implements Exception {
+  final String message;
+  const InvalidTransitionException(this.message);
+  @override
+  String toString() => message;
+}
+
 class ApiService {
   static final ApiService _instance = ApiService._();
   factory ApiService() => _instance;
@@ -17,12 +26,43 @@ class ApiService {
     return mission as Map<String, dynamic>?;
   }
 
+  /// Fetch a single delivery by id. Throws if not found.
+  Future<Map<String, dynamic>> getDelivery(int deliveryId) async {
+    final r = await http.get(Uri.parse('$_base/deliveries/$deliveryId'));
+    if (r.statusCode != 200) {
+      throw Exception(r.body.isNotEmpty ? r.body : 'Get delivery failed');
+    }
+    return jsonDecode(r.body) as Map<String, dynamic>;
+  }
+
   Future<void> setDeliveryState(int deliveryId, String state) async {
     final r = await http.post(
       Uri.parse('$_base/deliveries/$deliveryId/state'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'state': state}),
     );
+    if (r.statusCode == 422) {
+      String msg = 'Invalid transition';
+      try {
+        final body = jsonDecode(r.body) as Map<String, dynamic>;
+        final detail = body['detail'];
+        if (detail is Map) {
+          final error = detail['error'] as String? ?? '';
+          if (error == 'invalid_transition') {
+            msg = "Cannot go from '${detail['current']}' to '${detail['requested']}'";
+          } else if (error == 'unknown_state') {
+            msg = "Unknown state: ${detail['requested']}";
+          } else {
+            msg = detail.toString();
+          }
+        } else if (detail is List && detail.isNotEmpty) {
+          msg = (detail.first as Map)['msg'] as String? ?? msg;
+        } else if (detail is String) {
+          msg = detail;
+        }
+      } catch (_) {}
+      throw InvalidTransitionException(msg);
+    }
     if (r.statusCode != 200 && r.statusCode != 201) {
       throw Exception(r.body.isNotEmpty ? r.body : 'Set state failed');
     }

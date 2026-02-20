@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
+import '../domain/delivery_state.dart';
 import '../services/api_service.dart';
 import '../services/ws_track_service.dart';
 
@@ -15,10 +16,12 @@ class MissionScreen extends StatefulWidget {
 }
 
 class _MissionScreenState extends State<MissionScreen> {
-  int get _deliveryId => widget.mission['id'] as int? ?? widget.mission['delivery_id'] as int? ?? 0;
-  String get _customerName => widget.mission['customer_name'] as String? ?? '—';
-  String get _address => widget.mission['address'] as String? ?? '—';
-  String get _state => widget.mission['state'] as String? ?? '—';
+  late Map<String, dynamic> _mission;
+
+  int get _deliveryId => _mission['id'] as int? ?? _mission['delivery_id'] as int? ?? 0;
+  String get _customerName => _mission['customer_name'] as String? ?? '—';
+  String get _address => _mission['address'] as String? ?? '—';
+  DeliveryState get _deliveryState => DeliveryState.fromApi(_mission['state'] as String?);
 
   final ApiService _api = ApiService();
   WsTrackService? _wsTrack;
@@ -30,6 +33,7 @@ class _MissionScreenState extends State<MissionScreen> {
   @override
   void initState() {
     super.initState();
+    _mission = Map<String, dynamic>.from(widget.mission);
     _getLocation();
   }
 
@@ -86,36 +90,41 @@ class _MissionScreenState extends State<MissionScreen> {
     setState(() {});
   }
 
-  Future<void> _setState(String state) async {
-    setState(() => _loading = true);
+  /// Refresh mission state from API, then rebuild.
+  Future<void> _refreshMission() async {
     try {
-      await _api.setDeliveryState(_deliveryId, state);
-      if (mounted) setState(() {
-        widget.mission['state'] = state;
-        _loading = false;
-      });
-    } catch (e) {
-      if (mounted) setState(() {
-        _error = e.toString().replaceFirst('Exception: ', '');
-        _loading = false;
-      });
+      final fresh = await _api.getDelivery(_deliveryId);
+      if (mounted) {
+        setState(() {
+          _mission = fresh;
+          _error = null;
+        });
+      }
+    } catch (_) {
+      // Non-fatal: keep current state displayed
     }
   }
 
-  Future<void> _deliverAndCollect() async {
-    setState(() => _loading = true);
+  Future<void> _performAction(DriverAction action) async {
+    setState(() { _loading = true; _error = null; });
     try {
-      await _api.collectPayment(_deliveryId, method: 'cash');
-      await _api.setDeliveryState(_deliveryId, 'delivered');
-      if (mounted) setState(() {
-        widget.mission['state'] = 'delivered';
-        _loading = false;
-      });
+      if (action == DriverAction.deliver) {
+        await _api.collectPayment(_deliveryId, method: 'cash');
+        await _api.setDeliveryState(_deliveryId, DeliveryState.delivered.apiValue);
+      } else {
+        final target = action == DriverAction.start
+            ? DeliveryState.enRoute
+            : DeliveryState.arrived;
+        await _api.setDeliveryState(_deliveryId, target.apiValue);
+      }
+    } on InvalidTransitionException catch (e) {
+      if (mounted) setState(() => _error = e.message);
     } catch (e) {
-      if (mounted) setState(() {
-        _error = e.toString().replaceFirst('Exception: ', '');
-        _loading = false;
-      });
+      if (mounted) setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      // Always refresh so buttons reflect actual server state (e.g. after 422)
+      await _refreshMission();
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -124,6 +133,7 @@ class _MissionScreenState extends State<MissionScreen> {
     final lat = _currentPosition?.latitude ?? 33.57;
     final lon = _currentPosition?.longitude ?? -7.59;
     final center = LatLng(lat, lon);
+    final actions = allowedActions(_deliveryState);
 
     return Scaffold(
       appBar: AppBar(
@@ -141,34 +151,58 @@ class _MissionScreenState extends State<MissionScreen> {
                 children: [
                   Text(_customerName, style: Theme.of(context).textTheme.titleMedium),
                   Text(_address, style: Theme.of(context).textTheme.bodyMedium),
-                  Text('State: $_state', style: Theme.of(context).textTheme.bodySmall),
+                  Text(
+                    'State: ${_deliveryState.apiValue}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
                   if (_error != null)
-                    Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12)),
+                    Text(
+                      _error!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                        fontSize: 12,
+                      ),
+                    ),
                 ],
               ),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
-              children: [
-                FilledButton(
-                  onPressed: _loading ? null : () => _setState('en_route'),
-                  child: const Text('Start'),
-                ),
-                const SizedBox(width: 8),
-                FilledButton(
-                  onPressed: _loading ? null : () => _setState('arrived'),
-                  child: const Text('Arrive'),
-                ),
-                const SizedBox(width: 8),
-                FilledButton(
-                  onPressed: _loading ? null : _deliverAndCollect,
-                  child: const Text('Deliver + Cash'),
-                ),
-              ],
+          // Action buttons — only rendered when allowed by the state machine
+          if (actions.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                children: [
+                  if (actions.contains(DriverAction.start)) ...[
+                    FilledButton(
+                      onPressed: _loading ? null : () => _performAction(DriverAction.start),
+                      child: const Text('Start'),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  if (actions.contains(DriverAction.arrive)) ...[
+                    FilledButton(
+                      onPressed: _loading ? null : () => _performAction(DriverAction.arrive),
+                      child: const Text('Arrive'),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  if (actions.contains(DriverAction.deliver))
+                    FilledButton(
+                      onPressed: _loading ? null : () => _performAction(DriverAction.deliver),
+                      child: const Text('Deliver + Cash'),
+                    ),
+                ],
+              ),
             ),
-          ),
+          if (actions.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              child: Text(
+                'No actions available (${_deliveryState.apiValue})',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.all(12),
             child: _wsTrack?.isActive == true
