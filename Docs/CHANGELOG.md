@@ -28,6 +28,17 @@ All notable changes to this POC should be documented in this file.
   - LIV → Backend Status: 4 fields only, no secret visible.
   - Backend boot: `WS_SECRET` is required (CI must set it; a dummy is fine for unit tests).
 
+## 2026-02-20 — S2: Driver app contextual action buttons aligned with state machine
+
+- Added:
+  - Driver mission actions mapped to delivery state transitions (Start/Arrive/Deliver + Cash) and tracking controls.
+- Changed:
+  - Driver UI actions are aligned with the delivery state machine (`assigned → en_route → arrived → delivered`); invalid transitions are rejected by the backend/Odoo.
+- Fixed:
+  - N/A
+- Notes/Risks:
+  - Ensure state-dependent actions are exercised against real Odoo data; backend enforces allowed transitions.
+
 ## 2026-02-20 — Odoo config and model-level stability fixes
 - Added:
   - `odoo.conf`: `data_dir = /var/lib/odoo` to keep filestore path consistent.

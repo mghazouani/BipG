@@ -28,6 +28,18 @@ LIV POC is a Docker-based system combining:
 - **Driver app** queries FastAPI for the active mission and sends location updates.
 - **FastAPI** validates and processes tracking, writes last known state to Redis, and periodically persists snapshots/last_* to Odoo.
 
+## Driver actions by state (driver app)
+
+The driver app exposes mission actions that map to the Odoo delivery state machine. State validity is enforced server-side (FastAPI/Odoo); the UI buttons trigger the transition endpoints.
+
+| Current state | Driver action | Backend call(s) | Next state |
+|---|---|---|---|
+| `assigned` | **Start** | `POST /deliveries/{id}/state` `{state:"en_route"}` | `en_route` |
+| `en_route` | **Arrive** | `POST /deliveries/{id}/state` `{state:"arrived"}` | `arrived` |
+| `en_route` / `arrived` | **Deliver + Cash** | `POST /deliveries/{id}/collect-payment` then `POST /deliveries/{id}/state` `{state:"delivered"}` | `delivered` |
+| `assigned` / `en_route` / `arrived` | **Start Tracking** | `WS /ws/track?token=...` (tracking accepted only in active states) | (no state change) |
+| `delivered` / `cancelled` | (no operational actions expected) | — | — |
+
 ## Integration notes
 
 - **FastAPI ↔ Odoo**: synchronous validation and writes where possible; resilience mechanisms may queue writes when Odoo is unavailable.
