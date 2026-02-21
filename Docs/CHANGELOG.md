@@ -28,6 +28,21 @@ All notable changes to this POC should be documented in this file.
   - LIV → Backend Status: 4 fields only, no secret visible.
   - Backend boot: `WS_SECRET` is required (CI must set it; a dummy is fine for unit tests).
 
+## 2026-02-20 — Story #3: Driver app Cancel mission (with confirmation dialog)
+
+- Added:
+  - `DriverAction.cancel` in `lib/domain/delivery_state.dart` — cancel allowed only from `assigned` state.
+  - Cancel button (outlined, destructive style) in `MissionScreen` — shown exclusively when state is `assigned`.
+  - Confirmation `AlertDialog` ("Cancel mission?") before calling the API — "Keep" aborts, "Cancel mission" confirms.
+  - 422 / `InvalidTransitionException` handling for cancel, consistent with other actions.
+  - 2 new unit tests in `test/domain/delivery_state_test.dart` (cancel membership + exclusion from other states).
+  - 7 new widget tests in `test/screens/mission_screen_button_test.dart` (visibility, dialog flow, 422).
+- Changed:
+  - `allowedActions(assigned)` now returns `{start, cancel}` instead of `{start}`.
+  - `_performAction` in `MissionScreen` extended with exhaustive `switch` covering cancel.
+- Notes/Risks:
+  - Cancel is intentionally restricted to `assigned` only — drivers in `en_route`/`arrived` must escalate to backoffice.
+
 ## 2026-02-20 — S2: Driver app contextual action buttons aligned with state machine
 
 - Added:
