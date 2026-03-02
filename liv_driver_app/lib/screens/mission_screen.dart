@@ -105,16 +105,53 @@ class _MissionScreenState extends State<MissionScreen> {
     }
   }
 
+  /// Shows a confirmation dialog before cancelling the mission.
+  /// Returns true if the user confirmed, false otherwise.
+  Future<bool> _confirmCancel() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Cancel mission?'),
+        content: const Text(
+          'This will mark the delivery as cancelled.\n'
+          'This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Keep'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Cancel mission'),
+          ),
+        ],
+      ),
+    );
+    return confirmed ?? false;
+  }
+
   Future<void> _performAction(DriverAction action) async {
+    if (action == DriverAction.cancel) {
+      final confirmed = await _confirmCancel();
+      if (!confirmed) return;
+    }
+
     setState(() { _loading = true; _error = null; });
     try {
       if (action == DriverAction.deliver) {
         await _api.collectPayment(_deliveryId, method: 'cash');
         await _api.setDeliveryState(_deliveryId, DeliveryState.delivered.apiValue);
       } else {
-        final target = action == DriverAction.start
-            ? DeliveryState.enRoute
-            : DeliveryState.arrived;
+        final target = switch (action) {
+          DriverAction.start  => DeliveryState.enRoute,
+          DriverAction.arrive => DeliveryState.arrived,
+          DriverAction.cancel => DeliveryState.cancelled,
+          DriverAction.deliver => DeliveryState.delivered, // handled above
+        };
         await _api.setDeliveryState(_deliveryId, target.apiValue);
       }
     } on InvalidTransitionException catch (e) {
@@ -167,7 +204,7 @@ class _MissionScreenState extends State<MissionScreen> {
               ),
             ),
           ),
-          // Action buttons — only rendered when allowed by the state machine
+          // Primary action buttons — only rendered when allowed by the state machine
           if (actions.isNotEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -193,6 +230,22 @@ class _MissionScreenState extends State<MissionScreen> {
                       child: const Text('Deliver + Cash'),
                     ),
                 ],
+              ),
+            ),
+          // Cancel button — destructive, shown separately below primary actions
+          if (actions.contains(DriverAction.cancel))
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              child: OutlinedButton.icon(
+                onPressed: _loading ? null : () => _performAction(DriverAction.cancel),
+                icon: Icon(Icons.cancel_outlined, color: Theme.of(context).colorScheme.error),
+                label: Text(
+                  'Cancel mission',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: Theme.of(context).colorScheme.error),
+                ),
               ),
             ),
           if (actions.isEmpty)

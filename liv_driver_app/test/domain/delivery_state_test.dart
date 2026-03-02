@@ -32,8 +32,8 @@ void main() {
       expect(allowedActions(DeliveryState.draft), isEmpty);
     });
 
-    test('assigned: start only', () {
-      expect(allowedActions(DeliveryState.assigned), {DriverAction.start});
+    test('assigned: start + cancel', () {
+      expect(allowedActions(DeliveryState.assigned), {DriverAction.start, DriverAction.cancel});
     });
 
     test('en_route: arrive + deliver', () {
@@ -76,6 +76,29 @@ void main() {
           .where((s) => allowedActions(s).contains(DriverAction.deliver))
           .toSet();
       expect(statesWithDeliver, {DeliveryState.enRoute, DeliveryState.arrived});
+    });
+
+    test('cancel is only allowed from assigned', () {
+      final statesWithCancel = DeliveryState.values
+          .where((s) => allowedActions(s).contains(DriverAction.cancel))
+          .toList();
+      expect(statesWithCancel, [DeliveryState.assigned]);
+    });
+
+    test('cancel is NOT allowed from en_route, arrived, delivered, cancelled, draft', () {
+      for (final s in [
+        DeliveryState.draft,
+        DeliveryState.enRoute,
+        DeliveryState.arrived,
+        DeliveryState.delivered,
+        DeliveryState.cancelled,
+      ]) {
+        expect(
+          allowedActions(s).contains(DriverAction.cancel),
+          isFalse,
+          reason: 'cancel should not be available from ${s.apiValue}',
+        );
+      }
     });
   });
 }

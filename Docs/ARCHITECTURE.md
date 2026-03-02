@@ -35,10 +35,13 @@ The driver app exposes mission actions that map to the Odoo delivery state machi
 | Current state | Driver action | Backend call(s) | Next state |
 |---|---|---|---|
 | `assigned` | **Start** | `POST /deliveries/{id}/state` `{state:"en_route"}` | `en_route` |
+| `assigned` | **Cancel mission** _(with confirmation dialog)_ | `POST /deliveries/{id}/state` `{state:"cancelled"}` | `cancelled` |
 | `en_route` | **Arrive** | `POST /deliveries/{id}/state` `{state:"arrived"}` | `arrived` |
 | `en_route` / `arrived` | **Deliver + Cash** | `POST /deliveries/{id}/collect-payment` then `POST /deliveries/{id}/state` `{state:"delivered"}` | `delivered` |
 | `assigned` / `en_route` / `arrived` | **Start Tracking** | `WS /ws/track?token=...` (tracking accepted only in active states) | (no state change) |
-| `delivered` / `cancelled` | (no operational actions expected) | — | — |
+| `delivered` / `cancelled` | (no operational actions) | — | — |
+
+> **Cancel scope**: Cancel is intentionally restricted to `assigned` only. Drivers who have already started (`en_route` / `arrived`) must contact a backoffice operator to cancel.
 
 ## Integration notes
 

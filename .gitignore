@@ -24,6 +24,9 @@ htmlcov/
 .coverage
 coverage.xml
 
+# Gradle build cache (binary, no value in VCS)
+**/.gradle/
+
 # Flutter / Dart
 .dart_tool/
 .flutter-plugins

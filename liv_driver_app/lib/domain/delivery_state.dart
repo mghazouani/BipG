@@ -35,17 +35,22 @@ enum DeliveryState {
 }
 
 /// Driver actions available from the mission screen.
-enum DriverAction { start, arrive, deliver }
+enum DriverAction { start, arrive, deliver, cancel }
 
 /// Returns the set of [DriverAction]s the driver may perform from [state].
 ///
 /// Maps to the state machine transitions:
 ///   assigned  → en_route  (start)
+///   assigned  → cancelled (cancel)   ← driver cancels before starting
 ///   en_route  → arrived   (arrive)
 ///   en_route  → delivered (deliver)
 ///   arrived   → delivered (deliver)
+///
+/// Cancel is intentionally restricted to [DeliveryState.assigned] only.
+/// Once the driver has started (en_route) the mission should be escalated
+/// to a backoffice operator rather than cancelled from the mobile app.
 Set<DriverAction> allowedActions(DeliveryState state) => switch (state) {
-      DeliveryState.assigned => {DriverAction.start},
+      DeliveryState.assigned => {DriverAction.start, DriverAction.cancel},
       DeliveryState.enRoute => {DriverAction.arrive, DriverAction.deliver},
       DeliveryState.arrived => {DriverAction.deliver},
       _ => {},

@@ -1,0 +1,246 @@
+# LIV POC — GitLab CI/CD (infra segmentée: 1 VM = 1 rôle)
+#
+# Branches:
+#   develop   → DEV auto deploy (api-dev01 + odoo-dev01)
+#   release/* → STG manual deploy (api-stg01 + odoo-stg01)
+#
+# Repo layout:
+#   api/          — FastAPI application + Dockerfile
+#   odoo/         — Odoo addons + config
+#   infra/deploy/ — compose files shipped to VMs
+#
+# Postgres / Redis are OS-native (not managed by compose).
+# GitLab: http://gitlab01.bgapps.internal, runner on 10.10.0.150 (Docker executor).
+
+stages:
+  - validate
+  - build
+  - deploy_dev
+  - smoke_dev
+  - promote_stg
+  - deploy_stg
+  - smoke_stg
+
+variables:
+  DOCKER_DRIVER: overlay2
+  # Deploy paths per VM role (override in GitLab CI/CD Variables if needed)
+  DEV_API_DEPLOY_PATH: /opt/bgapps
+  DEV_ODOO_DEPLOY_PATH: /srv/odoo/app
+  STG_API_DEPLOY_PATH: /opt/bgapps
+  STG_ODOO_DEPLOY_PATH: /srv/odoo/app
+
+# ═══════════════════════════════════════════
+# VALIDATE (merge requests)
+# ═══════════════════════════════════════════
+
+validate:backend:
+  stage: validate
+  image: python:3.11-slim
+  before_script:
+    - pip install -r api/requirements.txt
+  script:
+    - python -m pytest -v api/tests
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+# Flutter apps not present in this repo structure — disabled until added.
+validate:driver_app:
+  stage: validate
+  rules:
+    - when: never
+
+validate:client_app:
+  stage: validate
+  rules:
+    - when: never
+
+# ═══════════════════════════════════════════
+# BUILD (develop OR release/*)
+# ═══════════════════════════════════════════
+
+build:fastapi:
+  stage: build
+  image: docker:24
+  services:
+    - docker:24-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  script:
+    - docker build -t $CI_REGISTRY_IMAGE/fastapi:$CI_COMMIT_SHORT_SHA ./api
+    - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
+    - docker push $CI_REGISTRY_IMAGE/fastapi:$CI_COMMIT_SHORT_SHA
+  rules:
+    - if: $CI_COMMIT_BRANCH == "develop"
+    - if: $CI_COMMIT_BRANCH =~ /^release\//
+
+# ═══════════════════════════════════════════
+# DEPLOY DEV — auto on develop
+# ═══════════════════════════════════════════
+
+# --- SSH helper (YAML anchor) ---
+.ssh_setup_dev: &ssh_setup_dev
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache openssh-client
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY_DEV" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+
+# FastAPI on api-dev01 (10.10.0.112)
+deploy:dev:api:
+  stage: deploy_dev
+  needs: [build:fastapi]
+  <<: *ssh_setup_dev
+  script:
+    - ssh-keyscan -H $DEV_API_HOST >> ~/.ssh/known_hosts 2>/dev/null || true
+    - |
+      ssh $DEV_SSH_USER@$DEV_API_HOST "
+        set -e
+        cd $DEV_API_DEPLOY_PATH
+        git remote set-url origin git@gitlab01.bgapps.internal:bgapps/bgapps_plateform.git
+        git pull origin develop
+        echo \"$REGISTRY_PASSWORD\" | docker login -u \"$REGISTRY_USER\" --password-stdin \"$CI_REGISTRY\"
+        export IMAGE_FASTAPI=\"$CI_REGISTRY_IMAGE/fastapi:$CI_COMMIT_SHORT_SHA\"
+        export WS_SECRET=\"$WS_SECRET\"
+        export WS_SECRET_PREV=\"$WS_SECRET_PREV\"
+        export HEALTH_SECRET=\"$HEALTH_SECRET\"
+        export ODOO_PASSWORD=\"$ODOO_PASSWORD\"
+        export POSTGRES_PASSWORD=\"$POSTGRES_PASSWORD\"
+        docker compose -f infra/deploy/compose.api-vm.yml --env-file env/dev.env pull
+        docker compose -f infra/deploy/compose.api-vm.yml --env-file env/dev.env up -d --remove-orphans
+      "
+  environment:
+    name: dev/api
+  rules:
+    - if: $CI_COMMIT_BRANCH == "develop"
+
+# Odoo on odoo-dev01 (10.10.0.113)
+deploy:dev:odoo:
+  stage: deploy_dev
+  <<: *ssh_setup_dev
+  script:
+    - ssh-keyscan -H $DEV_ODOO_HOST >> ~/.ssh/known_hosts 2>/dev/null || true
+    - |
+      ssh $DEV_SSH_USER@$DEV_ODOO_HOST "
+        set -e
+        cd $DEV_ODOO_DEPLOY_PATH
+        git remote set-url origin git@gitlab01.bgapps.internal:bgapps/bgapps_plateform.git
+        git pull origin develop
+        export POSTGRES_PASSWORD=\"$POSTGRES_PASSWORD\"
+        export ODOO_ADMIN_PASSWD=\"$ODOO_ADMIN_PASSWD\"
+        docker compose -f infra/deploy/compose.odoo-vm.yml --env-file env/dev.env pull
+        docker compose -f infra/deploy/compose.odoo-vm.yml --env-file env/dev.env up -d --remove-orphans
+      "
+  environment:
+    name: dev/odoo
+  rules:
+    - if: $CI_COMMIT_BRANCH == "develop"
+
+# ═══════════════════════════════════════════
+# SMOKE DEV — after api deploy
+# ═══════════════════════════════════════════
+
+smoke:dev:
+  stage: smoke_dev
+  needs: [deploy:dev:api]
+  image: curlimages/curl:latest
+  script:
+    - |
+      curl -sf "${DEV_API_URL:-http://api-dev01.bgapps.internal:8000}/health" \
+        -o /dev/null || (echo "Smoke failed: /health unreachable" && exit 1)
+  rules:
+    - if: $CI_COMMIT_BRANCH == "develop"
+
+# ═══════════════════════════════════════════
+# PROMOTE STG — manual gate on release/*
+# ═══════════════════════════════════════════
+
+promote:stg:
+  stage: promote_stg
+  image: alpine:latest
+  script:
+    - echo "Promotion to staging approved."
+  rules:
+    - if: $CI_COMMIT_BRANCH =~ /^release\//
+      when: manual
+
+# ═══════════════════════════════════════════
+# DEPLOY STG — manual on release/*
+# ═══════════════════════════════════════════
+
+.ssh_setup_stg: &ssh_setup_stg
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache openssh-client
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY_STG" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+
+# FastAPI on api-stg01 (10.10.0.130)
+deploy:stg:api:
+  stage: deploy_stg
+  needs: [promote:stg, build:fastapi]
+  <<: *ssh_setup_stg
+  script:
+    - ssh-keyscan -H $STG_API_HOST >> ~/.ssh/known_hosts 2>/dev/null || true
+    - |
+      ssh $STG_SSH_USER@$STG_API_HOST "
+        set -e
+        cd $STG_API_DEPLOY_PATH
+        git remote set-url origin git@gitlab01.bgapps.internal:bgapps/bgapps_plateform.git
+        git pull origin release/${CI_COMMIT_BRANCH#release/}
+        echo \"$REGISTRY_PASSWORD\" | docker login -u \"$REGISTRY_USER\" --password-stdin \"$CI_REGISTRY\"
+        export IMAGE_FASTAPI=\"$CI_REGISTRY_IMAGE/fastapi:${STG_IMAGE_TAG:-$CI_COMMIT_SHORT_SHA}\"
+        export WS_SECRET=\"$WS_SECRET\"
+        export WS_SECRET_PREV=\"$WS_SECRET_PREV\"
+        export HEALTH_SECRET=\"$HEALTH_SECRET\"
+        export ODOO_PASSWORD=\"$ODOO_PASSWORD\"
+        export POSTGRES_PASSWORD=\"$POSTGRES_PASSWORD\"
+        docker compose -f infra/deploy/compose.api-vm.yml --env-file env/stg.env pull
+        docker compose -f infra/deploy/compose.api-vm.yml --env-file env/stg.env up -d --remove-orphans
+      "
+  environment:
+    name: stg/api
+  rules:
+    - if: $CI_COMMIT_BRANCH =~ /^release\//
+      when: manual
+
+# Odoo on odoo-stg01 (10.10.0.133)
+deploy:stg:odoo:
+  stage: deploy_stg
+  needs: [promote:stg]
+  <<: *ssh_setup_stg
+  script:
+    - ssh-keyscan -H $STG_ODOO_HOST >> ~/.ssh/known_hosts 2>/dev/null || true
+    - |
+      ssh $STG_SSH_USER@$STG_ODOO_HOST "
+        set -e
+        cd $STG_ODOO_DEPLOY_PATH
+        git remote set-url origin git@gitlab01.bgapps.internal:bgapps/bgapps_plateform.git
+        git pull origin release/${CI_COMMIT_BRANCH#release/}
+        export POSTGRES_PASSWORD=\"$POSTGRES_PASSWORD\"
+        export ODOO_ADMIN_PASSWD=\"$ODOO_ADMIN_PASSWD\"
+        docker compose -f infra/deploy/compose.odoo-vm.yml --env-file env/stg.env pull
+        docker compose -f infra/deploy/compose.odoo-vm.yml --env-file env/stg.env up -d --remove-orphans
+      "
+  environment:
+    name: stg/odoo
+  rules:
+    - if: $CI_COMMIT_BRANCH =~ /^release\//
+      when: manual
+
+# ═══════════════════════════════════════════
+# SMOKE STG — after both stg deploys
+# ═══════════════════════════════════════════
+
+smoke:stg:
+  stage: smoke_stg
+  needs: [deploy:stg:api, deploy:stg:odoo]
+  image: curlimages/curl:latest
+  script:
+    - |
+      curl -sf "${STG_API_URL:-http://api-stg01.bgapps.internal:8000}/health" \
+        -o /dev/null || (echo "Smoke failed: /health unreachable" && exit 1)
+  rules:
+    - if: $CI_COMMIT_BRANCH =~ /^release\//
+      when: manual
